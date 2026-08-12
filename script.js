@@ -1221,18 +1221,6 @@
         renderView(view);
     }
 
-    // --- RESET ---
-    function resetToDefault() {
-        if (confirm('⚠️ Esto eliminará TODOS los cambios guardados y restaurará las tareas por defecto. ¿Continuar?')) {
-            patterns = DEFAULT_PATTERNS.map(p => ({ ...p, id: p.id || generatePatternId() }));
-            currentTasks = {};
-            patterns.forEach(p => applyPattern(p));
-            savePatterns();
-            autoSave();
-            renderView(currentView);
-        }
-    }
-
     // --- INICIALIZACIÓN ---
     function init() {
         const today = new Date();
@@ -1287,6 +1275,7 @@
             if (e.target === patternsModal) patternsModal.classList.remove('show');
         });
 
+        // ✅ Botones correctos (resetDefaultBtn eliminado)
         forceSyncBtn.addEventListener('click', forceSync);
         showPatternsBtn.addEventListener('click', showPatternsModal);
 
