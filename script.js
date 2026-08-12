@@ -10,8 +10,40 @@
         appId: "1:443183395131:web:23fd4a27a5a58e7d01471e"
     };
 
-    firebase.initializeApp(firebaseConfig);
-    const database = firebase.database();
+    // --- INICIALIZAR FIREBASE CON VERIFICACIÓN ---
+    let database;
+
+    try {
+        if (typeof firebase !== 'undefined') {
+            if (!firebase.apps.length) {
+                firebase.initializeApp(firebaseConfig);
+            }
+            database = firebase.database();
+            console.log('✅ Firebase conectado correctamente');
+        } else {
+            console.error('❌ Firebase no está cargado.');
+            document.getElementById('syncText').textContent = '⚠️ Error: Firebase no cargado';
+            document.getElementById('syncStatus').className = 'sync-status error';
+            database = {
+                ref: () => ({
+                    set: () => Promise.resolve(),
+                    once: () => Promise.resolve({ val: () => null }),
+                    on: () => {}
+                })
+            };
+        }
+    } catch (error) {
+        console.error('❌ Error al conectar con Firebase:', error);
+        document.getElementById('syncText').textContent = '⚠️ Error de conexión';
+        document.getElementById('syncStatus').className = 'sync-status error';
+        database = {
+            ref: () => ({
+                set: () => Promise.resolve(),
+                once: () => Promise.resolve({ val: () => null }),
+                on: () => {}
+            })
+        };
+    }
 
     // --- CONFIGURACIÓN ---
     const MIN_DATE = new Date(2026, 7, 1);
@@ -61,11 +93,11 @@
     ];
 
     // --- ESTADO ---
-    let currentTasks = {}; // { '2026-08-17': [tasks] }
-    let patterns = []; // Patrones guardados
+    let currentTasks = {};
+    let patterns = [];
     let isSyncing = false;
     let initialLoadDone = false;
-    let modalContext = null; // { mode: 'add'|'edit'|'delete', task, dateKey, index, patternId }
+    let modalContext = null;
 
     // Referencias DOM
     const viewContainer = document.getElementById('viewContainer');
@@ -172,7 +204,6 @@
 
     function addTaskToDate(dateKey, task) {
         const tasks = getTasksForDate(dateKey);
-        // Verificar si ya existe una tarea igual (por texto y tiempo)
         const exists = tasks.some(t => t.text === task.text && t.time === task.time);
         if (!exists) {
             tasks.push(task);
@@ -262,7 +293,6 @@
             active: true
         };
         patterns.push(pattern);
-        // Aplicar el patrón
         const added = applyPattern(pattern);
         savePatterns();
         return { pattern, added };
@@ -275,13 +305,8 @@
         const oldPattern = patterns[index];
         const newPattern = { ...oldPattern, ...updates };
         
-        // Eliminar las tareas del patrón antiguo
         removePatternFromDates(patternId, null, null);
-        
-        // Actualizar el patrón
         patterns[index] = newPattern;
-        
-        // Reaplicar el patrón
         const added = applyPattern(newPattern);
         savePatterns();
         return { pattern: newPattern, added };
@@ -291,21 +316,17 @@
         const pattern = patterns.find(p => p.id === patternId);
         if (!pattern) return null;
 
-        // Si se especifica, eliminar solo desde una fecha
         if (options.fromDate) {
             removePatternFromDates(patternId, options.fromDate, null);
-            // Actualizar el patrón para que empiece después de esa fecha
             const newStart = new Date(strToDate(options.fromDate));
             newStart.setDate(newStart.getDate() + 1);
             pattern.startDate = dateToKey(newStart);
             if (pattern.startDate > (pattern.endDate || dateToKey(new Date(MAX_DATE)))) {
-                // Si el patrón ya no tiene días válidos, eliminarlo
                 patterns = patterns.filter(p => p.id !== patternId);
             }
             savePatterns();
             return { deleted: false, updated: true };
         } else {
-            // Eliminar completamente
             removePatternFromDates(patternId, null, null);
             patterns = patterns.filter(p => p.id !== patternId);
             savePatterns();
@@ -314,21 +335,24 @@
     }
 
     function savePatterns() {
-        database.ref('patterns').set(patterns)
-            .catch(err => console.error('Error saving patterns:', err));
+        if (database && database.ref) {
+            database.ref('patterns').set(patterns)
+                .catch(err => console.error('Error saving patterns:', err));
+        }
     }
 
     function loadPatterns() {
+        if (!database || !database.ref) {
+            return Promise.resolve(patterns);
+        }
         return database.ref('patterns').once('value')
             .then(snapshot => {
                 const data = snapshot.val();
                 if (data && Array.isArray(data)) {
                     patterns = data;
                 } else {
-                    // Cargar patrones por defecto
                     patterns = DEFAULT_PATTERNS.map(p => ({ ...p, id: p.id || generatePatternId() }));
                     savePatterns();
-                    // Aplicar patrones a todas las fechas
                     patterns.forEach(p => applyPattern(p));
                 }
                 return patterns;
@@ -353,7 +377,7 @@
     }
 
     function saveToFirebase() {
-        if (isSyncing) return;
+        if (isSyncing || !database || !database.ref) return;
         isSyncing = true;
         updateSyncStatus('syncing', 'Guardando...');
         
@@ -376,20 +400,26 @@
     }
 
     function loadFromFirebase() {
+        if (!database || !database.ref) {
+            updateSyncStatus('error', 'Firebase no disponible');
+            initializeDefaultTasks();
+            initialLoadDone = true;
+            renderView(currentView);
+            return;
+        }
+
         updateSyncStatus('syncing', 'Cargando...');
         
         database.ref().once('value')
             .then((snapshot) => {
                 const data = snapshot.val();
                 if (data) {
-                    // Cargar tareas
                     if (data.tasks && typeof data.tasks === 'object') {
                         currentTasks = data.tasks;
                     } else {
                         initializeDefaultTasks();
                     }
                     
-                    // Cargar patrones
                     if (data.patterns && Array.isArray(data.patterns)) {
                         patterns = data.patterns;
                     } else {
@@ -419,7 +449,6 @@
 
     function initializeDefaultTasks() {
         currentTasks = {};
-        // Aplicar patrones por defecto
         patterns = DEFAULT_PATTERNS.map(p => ({ ...p, id: p.id || generatePatternId() }));
         patterns.forEach(p => applyPattern(p));
         savePatterns();
@@ -566,7 +595,6 @@
                 </div>
             `;
 
-            // Eventos del modal
             const colorOptions = modalBody.querySelectorAll('.color-selector .color-option');
             colorOptions.forEach(el => {
                 el.addEventListener('click', () => {
@@ -575,7 +603,6 @@
                 });
             });
 
-            // Mostrar/ocultar selector de días para patrón
             const applyOptions = modalBody.querySelectorAll('.modal-option[data-action]');
             const patternContainer = document.getElementById('patternDaysContainer');
             applyOptions.forEach(el => {
@@ -590,7 +617,6 @@
                 });
             });
 
-            // Confirmar
             document.getElementById('modalConfirmBtn').addEventListener('click', () => {
                 const text = document.getElementById('modalTaskText').value.trim();
                 const time = document.getElementById('modalTaskTime').value.trim();
@@ -606,14 +632,12 @@
                 const taskData = { text, time, color };
 
                 if (action === 'apply-single') {
-                    // Solo este día
                     if (isEdit) {
                         updateTaskInDate(dateKey, index, taskData);
                     } else {
                         addTaskToDate(dateKey, { ...taskData, fixed: false });
                     }
                 } else if (action === 'apply-week') {
-                    // Toda la semana
                     const weekDays = getWeekDays(date);
                     weekDays.forEach(d => {
                         const key = dateToKey(d);
@@ -624,7 +648,6 @@
                         }
                     });
                 } else if (action === 'apply-pattern') {
-                    // Crear patrón
                     const selectedDays = [];
                     modalBody.querySelectorAll('.pattern-day-check:checked').forEach(cb => {
                         selectedDays.push(cb.value);
@@ -647,7 +670,6 @@
                         active: true
                     };
                     const result = addPattern(pattern);
-                    // Si es edición, eliminar la tarea original
                     if (isEdit) {
                         removeTaskFromDate(dateKey, index);
                     }
@@ -659,10 +681,8 @@
             });
         }
 
-        // Eventos comunes del modal
         document.getElementById('modalCancelBtn')?.addEventListener('click', closeModal);
         
-        // Eventos de acciones de eliminación
         modalBody.querySelectorAll('.modal-option[data-action]')?.forEach(el => {
             el.addEventListener('click', () => {
                 const action = el.dataset.action;
@@ -674,7 +694,6 @@
                 if (action === 'delete-single') {
                     removeTaskFromDate(dateKey, index);
                 } else if (action === 'delete-from-now') {
-                    // Eliminar desde hoy en adelante (buscar tareas iguales)
                     const taskText = task.text;
                     const taskTime = task.time;
                     const currentDateObj = keyToDate(dateKey);
@@ -688,7 +707,6 @@
                         }
                     });
                 } else if (action === 'delete-all') {
-                    // Eliminar todas las ocurrencias
                     const taskText = task.text;
                     const taskTime = task.time;
                     const allDates = Object.keys(currentTasks);
@@ -758,7 +776,6 @@
         patternsModalBody.innerHTML = html;
         patternsModal.classList.add('show');
 
-        // Eventos
         patternsModalBody.querySelectorAll('.btn-delete-pattern').forEach(btn => {
             btn.addEventListener('click', () => {
                 const id = btn.dataset.patternId;
@@ -775,7 +792,6 @@
                 const id = btn.dataset.patternId;
                 const pattern = patterns.find(p => p.id === id);
                 if (pattern) {
-                    // Mostrar formulario de edición
                     const newText = prompt('Nuevo nombre:', pattern.text);
                     if (newText !== null && newText.trim() !== '') {
                         const newTime = prompt('Nuevo horario:', pattern.time || '');
@@ -794,7 +810,6 @@
 
         document.getElementById('addPatternBtn')?.addEventListener('click', () => {
             patternsModal.classList.remove('show');
-            // Abrir modal de agregar tarea con opción de patrón
             const todayKey = dateToKey(new Date());
             showTaskModal({
                 mode: 'add',
@@ -833,7 +848,7 @@
         }
         html += `</div>
             <div class="add-task-form" data-date="${dateKey}">
-                <button class="add-task-btn" style="width:100%;justify-content:center;padding:12px;background:#f0f6ff;color:#2a7de1;border:2px dashed #c6d7eb;">
+                <button class="add-task-btn" style="width:100%;justify-content:center;padding:12px;background:#f0f6ff;color:#2a7de1;border:2px dashed #c6d7eb;border-radius:16px;cursor:pointer;">
                     <i class="fas fa-plus"></i> Agregar tarea
                 </button>
             </div>
@@ -841,29 +856,24 @@
 
         viewContainer.innerHTML = html;
 
-        // Evento del botón agregar
         viewContainer.querySelector('.add-task-btn')?.addEventListener('click', () => {
             showTaskModal({ mode: 'add', dateKey: dateKey, index: -1 });
         });
 
-        // Eventos de tareas
         viewContainer.querySelectorAll('.task-item').forEach(item => {
             const dateKey = item.dataset.date;
             const idx = parseInt(item.dataset.idx);
             const tasksData = getTasksForDate(dateKey);
             if (tasksData && tasksData[idx]) {
                 const task = tasksData[idx];
-                // Editar
                 item.querySelector('.edit-task')?.addEventListener('click', (e) => {
                     e.stopPropagation();
                     showTaskModal({ mode: 'edit', task, dateKey, index: idx });
                 });
-                // Eliminar
                 item.querySelector('.remove-task')?.addEventListener('click', (e) => {
                     e.stopPropagation();
                     showTaskModal({ mode: 'delete', task, dateKey, index: idx, patternId: task.patternId });
                 });
-                // Color
                 item.querySelector('.color-picker-btn')?.addEventListener('click', (e) => {
                     e.stopPropagation();
                     toggleColorPalette(item, task, dateKey, idx);
@@ -970,7 +980,6 @@
 
         viewContainer.innerHTML = html;
 
-        // Eventos
         viewContainer.querySelectorAll('.clickable-cell, .clickable-date').forEach(el => {
             el.addEventListener('click', (e) => {
                 if (e.target.closest('.task-actions') || e.target.closest('.add-task-form')) return;
@@ -981,7 +990,6 @@
             });
         });
 
-        // Botones agregar
         viewContainer.querySelectorAll('.add-task-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 e.stopPropagation();
@@ -1223,19 +1231,21 @@
             currentDate = today;
         }
 
-        // Eventos de vistas
+        // Logs de diagnóstico
+        console.log('🚀 Planner APEX iniciado');
+        console.log('📅 Fecha actual:', new Date().toLocaleDateString());
+        console.log('📊 Firebase:', typeof firebase !== 'undefined' ? '✅ Cargado' : '❌ No cargado');
+
         viewBtns.forEach(btn => {
             btn.addEventListener('click', () => {
                 setView(btn.dataset.view);
             });
         });
 
-        // Navegación
         prevBtn.addEventListener('click', () => navigate(-1));
         nextBtn.addEventListener('click', () => navigate(1));
         todayBtn.addEventListener('click', goToToday);
 
-        // Date picker
         datePickerToggle.addEventListener('click', toggleDatePicker);
         pickerPrevMonth.addEventListener('click', () => {
             pickerDate.setMonth(pickerDate.getMonth() - 1);
@@ -1253,11 +1263,9 @@
             }
         });
 
-        // Modal
         modalClose.addEventListener('click', closeModal);
         patternsModalClose.addEventListener('click', () => patternsModal.classList.remove('show'));
         
-        // Cerrar modales al hacer clic fuera
         mainModal.addEventListener('click', (e) => {
             if (e.target === mainModal) closeModal();
         });
@@ -1265,12 +1273,10 @@
             if (e.target === patternsModal) patternsModal.classList.remove('show');
         });
 
-        // Botones
         document.getElementById('resetDefaultBtn').addEventListener('click', resetToDefault);
         forceSyncBtn.addEventListener('click', forceSync);
         showPatternsBtn.addEventListener('click', showPatternsModal);
 
-        // Cargar datos
         loadFromFirebase();
     }
 
