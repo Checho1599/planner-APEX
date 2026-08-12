@@ -514,6 +514,11 @@
                     <button class="btn-secondary" id="modalCancelBtn">Cancelar</button>
                 </div>
             `;
+            // Vincular eventos de eliminación
+            modalBody.querySelectorAll('.modal-option[data-action]').forEach(el => {
+                el.addEventListener('click', handleDeleteAction);
+            });
+            document.getElementById('modalCancelBtn')?.addEventListener('click', closeModal);
         } else {
             const titleText = isEdit ? 'Editar tarea' : 'Agregar tarea';
             const btnText = isEdit ? 'Actualizar' : 'Agregar';
@@ -595,21 +600,25 @@
                 </div>
             `;
 
+            // --- VINCULAR EVENTOS DEL MODAL ---
+            
+            // 1. Selector de color
             const colorOptions = modalBody.querySelectorAll('.color-selector .color-option');
             colorOptions.forEach(el => {
-                el.addEventListener('click', () => {
+                el.addEventListener('click', function() {
                     colorOptions.forEach(c => c.classList.remove('selected'));
-                    el.classList.add('selected');
+                    this.classList.add('selected');
                 });
             });
 
+            // 2. Opciones de aplicación (mostrar/ocultar selector de días)
             const applyOptions = modalBody.querySelectorAll('.modal-option[data-action]');
             const patternContainer = document.getElementById('patternDaysContainer');
             applyOptions.forEach(el => {
-                el.addEventListener('click', () => {
+                el.addEventListener('click', function() {
                     applyOptions.forEach(o => o.classList.remove('selected'));
-                    el.classList.add('selected');
-                    if (el.dataset.action === 'apply-pattern') {
+                    this.classList.add('selected');
+                    if (this.dataset.action === 'apply-pattern') {
                         patternContainer.style.display = 'block';
                     } else {
                         patternContainer.style.display = 'none';
@@ -617,118 +626,129 @@
                 });
             });
 
-            document.getElementById('modalConfirmBtn').addEventListener('click', () => {
-                const text = document.getElementById('modalTaskText').value.trim();
-                const time = document.getElementById('modalTaskTime').value.trim();
-                const color = modalBody.querySelector('.color-option.selected')?.dataset.color || DEFAULT_COLOR;
-                const selectedOption = modalBody.querySelector('.modal-option.selected');
-                const action = selectedOption?.dataset.action || 'apply-single';
-
-                if (!text) {
-                    alert('Por favor, ingresa un nombre para la tarea.');
-                    return;
-                }
-
-                const taskData = { text, time, color };
-
-                if (action === 'apply-single') {
-                    if (isEdit) {
-                        updateTaskInDate(dateKey, index, taskData);
-                    } else {
-                        addTaskToDate(dateKey, { ...taskData, fixed: false });
-                    }
-                } else if (action === 'apply-week') {
-                    const weekDays = getWeekDays(date);
-                    weekDays.forEach(d => {
-                        const key = dateToKey(d);
-                        if (isEdit && d.getTime() === date.getTime()) {
-                            updateTaskInDate(key, index, taskData);
-                        } else {
-                            addTaskToDate(key, { ...taskData, fixed: false, patternId: null });
-                        }
-                    });
-                } else if (action === 'apply-pattern') {
-                    const selectedDays = [];
-                    modalBody.querySelectorAll('.pattern-day-check:checked').forEach(cb => {
-                        selectedDays.push(cb.value);
-                    });
-                    if (selectedDays.length === 0) {
-                        alert('Selecciona al menos un día de la semana.');
-                        return;
-                    }
-                    const startDate = document.getElementById('patternStartDate').value;
-                    const endDate = document.getElementById('patternEndDate').value || null;
-                    
-                    const pattern = {
-                        text: text,
-                        time: time,
-                        color: color,
-                        type: 'weekly',
-                        days: selectedDays,
-                        startDate: startDate,
-                        endDate: endDate,
-                        active: true
-                    };
-                    const result = addPattern(pattern);
-                    if (isEdit) {
-                        removeTaskFromDate(dateKey, index);
-                    }
-                    alert(`✅ Patrón creado. Se agregaron ${result.added} tareas.`);
-                }
-
-                closeModal();
-                renderView(currentView);
+            // 3. Botón de confirmación
+            document.getElementById('modalConfirmBtn').addEventListener('click', function() {
+                handleConfirmAction(isEdit, dateKey, index);
             });
+
+            // 4. Botón de cancelar
+            document.getElementById('modalCancelBtn')?.addEventListener('click', closeModal);
         }
-
-        document.getElementById('modalCancelBtn')?.addEventListener('click', closeModal);
-        
-        modalBody.querySelectorAll('.modal-option[data-action]')?.forEach(el => {
-            el.addEventListener('click', () => {
-                const action = el.dataset.action;
-                const task = modalContext.task;
-                const dateKey = modalContext.dateKey;
-                const index = modalContext.index;
-                const patternId = modalContext.patternId;
-
-                if (action === 'delete-single') {
-                    removeTaskFromDate(dateKey, index);
-                } else if (action === 'delete-from-now') {
-                    const taskText = task.text;
-                    const taskTime = task.time;
-                    const currentDateObj = keyToDate(dateKey);
-                    const allDates = Object.keys(currentTasks);
-                    allDates.forEach(key => {
-                        const date = keyToDate(key);
-                        if (date >= currentDateObj) {
-                            const tasks = getTasksForDate(key);
-                            const newTasks = tasks.filter(t => !(t.text === taskText && t.time === taskTime));
-                            setTasksForDate(key, newTasks);
-                        }
-                    });
-                } else if (action === 'delete-all') {
-                    const taskText = task.text;
-                    const taskTime = task.time;
-                    const allDates = Object.keys(currentTasks);
-                    allDates.forEach(key => {
-                        const tasks = getTasksForDate(key);
-                        const newTasks = tasks.filter(t => !(t.text === taskText && t.time === taskTime));
-                        setTasksForDate(key, newTasks);
-                    });
-                } else if (action === 'delete-pattern' && patternId) {
-                    const pattern = patterns.find(p => p.id === patternId);
-                    if (pattern && confirm(`¿Eliminar el patrón "${pattern.text}" y todas sus tareas?`)) {
-                        deletePattern(patternId);
-                    }
-                }
-                closeModal();
-                renderView(currentView);
-            });
-        });
 
         mainModal.classList.add('show');
     }
 
+    // --- MANEJADOR DE CONFIRMACIÓN ---
+    function handleConfirmAction(isEdit, dateKey, index) {
+        const text = document.getElementById('modalTaskText').value.trim();
+        const time = document.getElementById('modalTaskTime').value.trim();
+        const color = document.querySelector('#modalColorSelector .color-option.selected')?.dataset.color || DEFAULT_COLOR;
+        const selectedOption = document.querySelector('.modal-option.selected');
+        const action = selectedOption?.dataset.action || 'apply-single';
+
+        if (!text) {
+            alert('Por favor, ingresa un nombre para la tarea.');
+            return;
+        }
+
+        const date = keyToDate(dateKey);
+        const taskData = { text, time, color };
+
+        if (action === 'apply-single') {
+            if (isEdit) {
+                updateTaskInDate(dateKey, index, taskData);
+            } else {
+                addTaskToDate(dateKey, { ...taskData, fixed: false });
+            }
+            closeModal();
+            renderView(currentView);
+        } else if (action === 'apply-week') {
+            const weekDays = getWeekDays(date);
+            weekDays.forEach(d => {
+                const key = dateToKey(d);
+                if (isEdit && d.getTime() === date.getTime()) {
+                    updateTaskInDate(key, index, taskData);
+                } else {
+                    addTaskToDate(key, { ...taskData, fixed: false, patternId: null });
+                }
+            });
+            closeModal();
+            renderView(currentView);
+        } else if (action === 'apply-pattern') {
+            const selectedDays = [];
+            document.querySelectorAll('.pattern-day-check:checked').forEach(cb => {
+                selectedDays.push(cb.value);
+            });
+            if (selectedDays.length === 0) {
+                alert('Selecciona al menos un día de la semana.');
+                return;
+            }
+            const startDate = document.getElementById('patternStartDate').value;
+            const endDate = document.getElementById('patternEndDate').value || null;
+            
+            const pattern = {
+                text: text,
+                time: time,
+                color: color,
+                type: 'weekly',
+                days: selectedDays,
+                startDate: startDate,
+                endDate: endDate,
+                active: true
+            };
+            const result = addPattern(pattern);
+            if (isEdit) {
+                removeTaskFromDate(dateKey, index);
+            }
+            closeModal();
+            alert(`✅ Patrón creado. Se agregaron ${result.added} tareas.`);
+            renderView(currentView);
+        }
+    }
+
+    // --- MANEJADOR DE ELIMINACIÓN ---
+    function handleDeleteAction(e) {
+        const action = this.dataset.action;
+        const task = modalContext.task;
+        const dateKey = modalContext.dateKey;
+        const index = modalContext.index;
+        const patternId = modalContext.patternId;
+
+        if (action === 'delete-single') {
+            removeTaskFromDate(dateKey, index);
+        } else if (action === 'delete-from-now') {
+            const taskText = task.text;
+            const taskTime = task.time;
+            const currentDateObj = keyToDate(dateKey);
+            const allDates = Object.keys(currentTasks);
+            allDates.forEach(key => {
+                const date = keyToDate(key);
+                if (date >= currentDateObj) {
+                    const tasks = getTasksForDate(key);
+                    const newTasks = tasks.filter(t => !(t.text === taskText && t.time === taskTime));
+                    setTasksForDate(key, newTasks);
+                }
+            });
+        } else if (action === 'delete-all') {
+            const taskText = task.text;
+            const taskTime = task.time;
+            const allDates = Object.keys(currentTasks);
+            allDates.forEach(key => {
+                const tasks = getTasksForDate(key);
+                const newTasks = tasks.filter(t => !(t.text === taskText && t.time === taskTime));
+                setTasksForDate(key, newTasks);
+            });
+        } else if (action === 'delete-pattern' && patternId) {
+            const pattern = patterns.find(p => p.id === patternId);
+            if (pattern && confirm(`¿Eliminar el patrón "${pattern.text}" y todas sus tareas?`)) {
+                deletePattern(patternId);
+            }
+        }
+        closeModal();
+        renderView(currentView);
+    }
+
+    // --- MODAL DE PATRONES ---
     function showPatternsModal() {
         let html = `
             <div style="margin-bottom:1rem;">
@@ -776,9 +796,10 @@
         patternsModalBody.innerHTML = html;
         patternsModal.classList.add('show');
 
+        // Eventos
         patternsModalBody.querySelectorAll('.btn-delete-pattern').forEach(btn => {
-            btn.addEventListener('click', () => {
-                const id = btn.dataset.patternId;
+            btn.addEventListener('click', function() {
+                const id = this.dataset.patternId;
                 if (confirm('¿Eliminar este patrón y todas sus tareas?')) {
                     deletePattern(id);
                     showPatternsModal();
@@ -788,8 +809,8 @@
         });
 
         patternsModalBody.querySelectorAll('.btn-edit-pattern').forEach(btn => {
-            btn.addEventListener('click', () => {
-                const id = btn.dataset.patternId;
+            btn.addEventListener('click', function() {
+                const id = this.dataset.patternId;
                 const pattern = patterns.find(p => p.id === id);
                 if (pattern) {
                     const newText = prompt('Nuevo nombre:', pattern.text);
@@ -808,7 +829,7 @@
             });
         });
 
-        document.getElementById('addPatternBtn')?.addEventListener('click', () => {
+        document.getElementById('addPatternBtn')?.addEventListener('click', function() {
             patternsModal.classList.remove('show');
             const todayKey = dateToKey(new Date());
             showTaskModal({
@@ -856,7 +877,8 @@
 
         viewContainer.innerHTML = html;
 
-        viewContainer.querySelector('.add-task-btn')?.addEventListener('click', () => {
+        viewContainer.querySelector('.add-task-btn')?.addEventListener('click', function() {
+            const dateKey = this.closest('.add-task-form').dataset.date;
             showTaskModal({ mode: 'add', dateKey: dateKey, index: -1 });
         });
 
@@ -866,15 +888,15 @@
             const tasksData = getTasksForDate(dateKey);
             if (tasksData && tasksData[idx]) {
                 const task = tasksData[idx];
-                item.querySelector('.edit-task')?.addEventListener('click', (e) => {
+                item.querySelector('.edit-task')?.addEventListener('click', function(e) {
                     e.stopPropagation();
                     showTaskModal({ mode: 'edit', task, dateKey, index: idx });
                 });
-                item.querySelector('.remove-task')?.addEventListener('click', (e) => {
+                item.querySelector('.remove-task')?.addEventListener('click', function(e) {
                     e.stopPropagation();
                     showTaskModal({ mode: 'delete', task, dateKey, index: idx, patternId: task.patternId });
                 });
-                item.querySelector('.color-picker-btn')?.addEventListener('click', (e) => {
+                item.querySelector('.color-picker-btn')?.addEventListener('click', function(e) {
                     e.stopPropagation();
                     toggleColorPalette(item, task, dateKey, idx);
                 });
@@ -916,7 +938,7 @@
             option.className = 'color-option';
             option.style.backgroundColor = color;
             if (task.color === color) option.classList.add('selected');
-            option.addEventListener('click', (e) => {
+            option.addEventListener('click', function(e) {
                 e.stopPropagation();
                 updateTaskInDate(dateKey, index, { color: color });
                 renderView(currentView);
@@ -981,9 +1003,9 @@
         viewContainer.innerHTML = html;
 
         viewContainer.querySelectorAll('.clickable-cell, .clickable-date').forEach(el => {
-            el.addEventListener('click', (e) => {
+            el.addEventListener('click', function(e) {
                 if (e.target.closest('.task-actions') || e.target.closest('.add-task-form')) return;
-                const dateKey = el.dataset.date;
+                const dateKey = this.dataset.date;
                 if (dateKey) {
                     goToDayView(dateKey);
                 }
@@ -991,9 +1013,9 @@
         });
 
         viewContainer.querySelectorAll('.add-task-btn').forEach(btn => {
-            btn.addEventListener('click', (e) => {
+            btn.addEventListener('click', function(e) {
                 e.stopPropagation();
-                const dateKey = btn.closest('.add-task-form').dataset.date;
+                const dateKey = this.closest('.add-task-form').dataset.date;
                 showTaskModal({ mode: 'add', dateKey: dateKey, index: -1 });
             });
         });
@@ -1008,15 +1030,15 @@
             const tasksData = getTasksForDate(dateKey);
             if (tasksData && tasksData[idx]) {
                 const task = tasksData[idx];
-                item.querySelector('.edit-task')?.addEventListener('click', (e) => {
+                item.querySelector('.edit-task')?.addEventListener('click', function(e) {
                     e.stopPropagation();
                     showTaskModal({ mode: 'edit', task, dateKey, index: idx });
                 });
-                item.querySelector('.remove-task')?.addEventListener('click', (e) => {
+                item.querySelector('.remove-task')?.addEventListener('click', function(e) {
                     e.stopPropagation();
                     showTaskModal({ mode: 'delete', task, dateKey, index: idx, patternId: task.patternId });
                 });
-                item.querySelector('.color-picker-btn')?.addEventListener('click', (e) => {
+                item.querySelector('.color-picker-btn')?.addEventListener('click', function(e) {
                     e.stopPropagation();
                     toggleColorPalette(item, task, dateKey, idx);
                 });
@@ -1068,8 +1090,8 @@
         viewContainer.innerHTML = html;
 
         viewContainer.querySelectorAll('.month-day:not(.no-day)').forEach(el => {
-            el.addEventListener('click', () => {
-                const dateKey = el.dataset.date;
+            el.addEventListener('click', function() {
+                const dateKey = this.dataset.date;
                 if (dateKey) {
                     goToDayView(dateKey);
                 }
@@ -1164,8 +1186,8 @@
         pickerGrid.innerHTML = html;
 
         pickerGrid.querySelectorAll('.picker-day:not(.disabled)').forEach(el => {
-            el.addEventListener('click', () => {
-                const dateKey = el.dataset.date;
+            el.addEventListener('click', function() {
+                const dateKey = this.dataset.date;
                 if (dateKey) {
                     currentDate = keyToDate(dateKey);
                     renderView(currentView);
@@ -1231,45 +1253,44 @@
             currentDate = today;
         }
 
-        // Logs de diagnóstico
         console.log('🚀 Planner APEX iniciado');
         console.log('📅 Fecha actual:', new Date().toLocaleDateString());
         console.log('📊 Firebase:', typeof firebase !== 'undefined' ? '✅ Cargado' : '❌ No cargado');
 
         viewBtns.forEach(btn => {
-            btn.addEventListener('click', () => {
-                setView(btn.dataset.view);
+            btn.addEventListener('click', function() {
+                setView(this.dataset.view);
             });
         });
 
-        prevBtn.addEventListener('click', () => navigate(-1));
-        nextBtn.addEventListener('click', () => navigate(1));
+        prevBtn.addEventListener('click', function() { navigate(-1); });
+        nextBtn.addEventListener('click', function() { navigate(1); });
         todayBtn.addEventListener('click', goToToday);
 
         datePickerToggle.addEventListener('click', toggleDatePicker);
-        pickerPrevMonth.addEventListener('click', () => {
+        pickerPrevMonth.addEventListener('click', function() {
             pickerDate.setMonth(pickerDate.getMonth() - 1);
             renderDatePicker();
         });
-        pickerNextMonth.addEventListener('click', () => {
+        pickerNextMonth.addEventListener('click', function() {
             pickerDate.setMonth(pickerDate.getMonth() + 1);
             renderDatePicker();
         });
         pickerTodayBtn.addEventListener('click', goToToday);
 
-        document.addEventListener('click', (e) => {
+        document.addEventListener('click', function(e) {
             if (!e.target.closest('.date-picker-wrapper')) {
                 closeDatePicker();
             }
         });
 
         modalClose.addEventListener('click', closeModal);
-        patternsModalClose.addEventListener('click', () => patternsModal.classList.remove('show'));
+        patternsModalClose.addEventListener('click', function() { patternsModal.classList.remove('show'); });
         
-        mainModal.addEventListener('click', (e) => {
+        mainModal.addEventListener('click', function(e) {
             if (e.target === mainModal) closeModal();
         });
-        patternsModal.addEventListener('click', (e) => {
+        patternsModal.addEventListener('click', function(e) {
             if (e.target === patternsModal) patternsModal.classList.remove('show');
         });
 
