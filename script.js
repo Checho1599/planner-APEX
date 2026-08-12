@@ -295,6 +295,7 @@
         patterns.push(pattern);
         const added = applyPattern(pattern);
         savePatterns();
+        autoSave(); // Guardar también las tareas
         return { pattern, added };
     }
 
@@ -309,6 +310,7 @@
         patterns[index] = newPattern;
         const added = applyPattern(newPattern);
         savePatterns();
+        autoSave();
         return { pattern: newPattern, added };
     }
 
@@ -325,11 +327,13 @@
                 patterns = patterns.filter(p => p.id !== patternId);
             }
             savePatterns();
+            autoSave();
             return { deleted: false, updated: true };
         } else {
             removePatternFromDates(patternId, null, null);
             patterns = patterns.filter(p => p.id !== patternId);
             savePatterns();
+            autoSave();
             return { deleted: true };
         }
     }
@@ -350,10 +354,12 @@
                 const data = snapshot.val();
                 if (data && Array.isArray(data)) {
                     patterns = data;
+                    console.log('📋 Patrones cargados desde Firebase:', patterns.length);
                 } else {
                     patterns = DEFAULT_PATTERNS.map(p => ({ ...p, id: p.id || generatePatternId() }));
                     savePatterns();
-                    patterns.forEach(p => applyPattern(p));
+                    // NO aplicar automáticamente para no sobrescribir tareas existentes
+                    console.log('📋 Patrones por defecto creados');
                 }
                 return patterns;
             });
@@ -414,21 +420,32 @@
             .then((snapshot) => {
                 const data = snapshot.val();
                 if (data) {
+                    // Cargar tareas
                     if (data.tasks && typeof data.tasks === 'object') {
                         currentTasks = data.tasks;
+                        console.log('📋 Tareas cargadas:', Object.keys(currentTasks).length, 'días con tareas');
                     } else {
+                        console.log('📋 No hay tareas guardadas, inicializando...');
                         initializeDefaultTasks();
                     }
                     
+                    // Cargar patrones (pero NO reaplicarlos automáticamente)
                     if (data.patterns && Array.isArray(data.patterns)) {
                         patterns = data.patterns;
+                        console.log('📋 Patrones cargados:', patterns.length);
                     } else {
+                        console.log('📋 No hay patrones guardados, creando por defecto...');
                         patterns = DEFAULT_PATTERNS.map(p => ({ ...p, id: p.id || generatePatternId() }));
                         savePatterns();
+                        // Solo aplicar patrones si no hay tareas
+                        if (Object.keys(currentTasks).length === 0) {
+                            patterns.forEach(p => applyPattern(p));
+                        }
                     }
                     
                     updateSyncStatus('synced', 'Datos cargados ✓');
                 } else {
+                    console.log('📋 No hay datos en Firebase, inicializando...');
                     initializeDefaultTasks();
                     patterns = DEFAULT_PATTERNS.map(p => ({ ...p, id: p.id || generatePatternId() }));
                     savePatterns();
@@ -449,19 +466,14 @@
 
     function initializeDefaultTasks() {
         currentTasks = {};
-        patterns = DEFAULT_PATTERNS.map(p => ({ ...p, id: p.id || generatePatternId() }));
-        patterns.forEach(p => applyPattern(p));
-        savePatterns();
-    }
-
-    function forceSync() {
-        if (isSyncing) return;
-        saveToFirebase();
-    }
-
-    function autoSave() {
-        if (initialLoadDone) {
-            saveToFirebase();
+        // Solo crear tareas si no hay patrones
+        if (patterns.length === 0) {
+            patterns = DEFAULT_PATTERNS.map(p => ({ ...p, id: p.id || generatePatternId() }));
+            patterns.forEach(p => applyPattern(p));
+            savePatterns();
+        } else {
+            // Si ya hay patrones, aplicarlos
+            patterns.forEach(p => applyPattern(p));
         }
     }
 
