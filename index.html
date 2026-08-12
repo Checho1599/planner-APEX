@@ -3,10 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Planner APEX · TecnomelL</title>
-    <!-- Font Awesome Icons -->
+    <title>Planner APEX · Tecnomel</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
-    <!-- Firebase SDKs (versión compat) -->
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
     <link rel="stylesheet" href="style.css">
@@ -22,18 +20,15 @@
             </div>
         </div>
 
-        <!-- Estado de sincronización -->
         <div class="sync-status" id="syncStatus">
             <i class="fas fa-cloud"></i> <span id="syncText">Conectando...</span>
         </div>
 
-        <!-- Navegación con buscador -->
         <div class="navigation">
             <button class="nav-btn" id="prevBtn"><i class="fas fa-chevron-left"></i></button>
             <span class="nav-title" id="navTitle">Hoy</span>
             <button class="nav-btn" id="nextBtn"><i class="fas fa-chevron-right"></i></button>
             
-            <!-- Buscador / Selector de fecha -->
             <div class="date-picker-wrapper">
                 <button class="nav-btn date-picker-toggle" id="datePickerToggle">
                     <i class="fas fa-calendar-alt"></i>
@@ -44,9 +39,7 @@
                         <span id="pickerMonthYear">Agosto 2026</span>
                         <button class="picker-nav" id="pickerNextMonth"><i class="fas fa-chevron-right"></i></button>
                     </div>
-                    <div class="date-picker-grid" id="datePickerGrid">
-                        <!-- Se llena con JS -->
-                    </div>
+                    <div class="date-picker-grid" id="datePickerGrid"></div>
                     <div class="date-picker-footer">
                         <button class="picker-today-btn" id="pickerTodayBtn">Hoy</button>
                     </div>
@@ -61,6 +54,33 @@
         <div class="footer-actions">
             <button class="btn-outline" id="resetDefaultBtn"><i class="fas fa-undo-alt"></i> Restaurar tareas fijas</button>
             <button class="btn-outline" id="forceSyncBtn"><i class="fas fa-sync"></i> Sincronizar ahora</button>
+            <button class="btn-outline" id="showPatternsBtn"><i class="fas fa-list"></i> Gestionar patrones</button>
+        </div>
+    </div>
+
+    <!-- MODAL PRINCIPAL -->
+    <div class="modal-overlay" id="mainModal">
+        <div class="modal-content modal-large">
+            <div class="modal-header">
+                <h3 id="modalTitle"><i class="fas fa-tasks"></i> Gestionar tarea</h3>
+                <button class="modal-close" id="modalClose"><i class="fas fa-times"></i></button>
+            </div>
+            <div id="modalBody">
+                <!-- Se llena con JS -->
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL DE PATRONES -->
+    <div class="modal-overlay" id="patternsModal">
+        <div class="modal-content modal-large">
+            <div class="modal-header">
+                <h3><i class="fas fa-list"></i> Patrones de tareas</h3>
+                <button class="modal-close" id="patternsModalClose"><i class="fas fa-times"></i></button>
+            </div>
+            <div id="patternsModalBody">
+                <!-- Se llena con JS -->
+            </div>
         </div>
     </div>
 
