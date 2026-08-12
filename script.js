@@ -37,21 +37,21 @@
     // --- DATOS INICIALES ---
     const DEFAULT_TASKS = {
         'Lunes': [
-            { text: 'Trabajo TecnoMEL', time: '8:00-17:00', fixed: true, color: '#2a7de1' }
+            { text: 'Trabajo Tecnomel', time: '8:00-17:00', fixed: true, color: '#2a7de1' }
         ],
         'Martes': [
-            { text: 'Trabajo TecnoMEL', time: '8:00-17:00', fixed: true, color: '#2a7de1' },
+            { text: 'Trabajo Tecnomel', time: '8:00-17:00', fixed: true, color: '#2a7de1' },
             { text: 'Grabación de contenido', time: '18:00-21:00', fixed: true, color: '#7c3aed' }
         ],
         'Miércoles': [
-            { text: 'Trabajo TecnoMEL', time: '8:00-17:00', fixed: true, color: '#2a7de1' }
+            { text: 'Trabajo Tecnomel', time: '8:00-17:00', fixed: true, color: '#2a7de1' }
         ],
         'Jueves': [
-            { text: 'Trabajo TecnoMEL', time: '8:00-17:00', fixed: true, color: '#2a7de1' },
+            { text: 'Trabajo Tecnomel', time: '8:00-17:00', fixed: true, color: '#2a7de1' },
             { text: 'Canto', time: '18:00-21:00', fixed: true, color: '#db2777' }
         ],
         'Viernes': [
-            { text: 'Trabajo TecnoMEL', time: '8:00-17:00', fixed: true, color: '#2a7de1' }
+            { text: 'Trabajo Tecnomel', time: '8:00-17:00', fixed: true, color: '#2a7de1' }
         ],
         'Sábado': [],
         'Domingo': []
