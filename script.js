@@ -1,4 +1,19 @@
 (function() {
+    // --- FIREBASE CONFIG (TU CONFIGURACIÓN) ---
+    const firebaseConfig = {
+        apiKey: "AIzaSyA39XX6TmHx19Mi02KtJaI9mZbKJytiExs",
+        authDomain: "planner-apex.firebaseapp.com",
+        databaseURL: "https://planner-apex-default-rtdb.firebaseio.com",
+        projectId: "planner-apex",
+        storageBucket: "planner-apex.firebasestorage.app",
+        messagingSenderId: "443183395131",
+        appId: "1:443183395131:web:23fd4a27a5a58e7d01471e"
+    };
+
+    // Inicializar Firebase
+    firebase.initializeApp(firebaseConfig);
+    const database = firebase.database();
+
     // --- CONFIGURACIÓN ---
     const MIN_DATE = new Date(2026, 7, 1);
     const MAX_DATE = new Date(2027, 11, 31);
@@ -43,14 +58,22 @@
     };
 
     let currentTasks = JSON.parse(JSON.stringify(DEFAULT_TASKS));
+    let isSyncing = false;
+    let initialLoadDone = false;
+    let syncTimeout = null;
+
+    // Referencias DOM
     const viewContainer = document.getElementById('viewContainer');
     const viewBtns = document.querySelectorAll('.view-btn');
     const navTitle = document.getElementById('navTitle');
     const prevBtn = document.getElementById('prevBtn');
     const nextBtn = document.getElementById('nextBtn');
     const todayBtn = document.getElementById('todayBtn');
+    const syncStatus = document.getElementById('syncStatus');
+    const syncText = document.getElementById('syncText');
+    const forceSyncBtn = document.getElementById('forceSyncBtn');
     
-    // Date picker elements
+    // Date picker
     const datePickerToggle = document.getElementById('datePickerToggle');
     const datePickerDropdown = document.getElementById('datePickerDropdown');
     const pickerMonthYear = document.getElementById('pickerMonthYear');
@@ -63,6 +86,97 @@
     let currentDate = new Date();
     let pickerDate = new Date();
 
+    // --- FUNCIONES DE SINCRONIZACIÓN ---
+    function updateSyncStatus(status, message) {
+        syncStatus.className = 'sync-status';
+        if (status === 'synced') {
+            syncStatus.classList.add('synced');
+            syncText.textContent = message || 'Sincronizado ✓';
+        } else if (status === 'syncing') {
+            syncStatus.classList.add('syncing');
+            syncText.textContent = message || 'Sincronizando...';
+        } else if (status === 'error') {
+            syncStatus.classList.add('error');
+            syncText.textContent = message || 'Error de sincronización';
+        } else {
+            syncText.textContent = message || 'Conectado';
+        }
+    }
+
+    function saveToFirebase() {
+        if (isSyncing) return;
+        
+        isSyncing = true;
+        updateSyncStatus('syncing', 'Guardando cambios...');
+        
+        const dataToSave = JSON.parse(JSON.stringify(currentTasks));
+        
+        database.ref('tasks').set(dataToSave)
+            .then(() => {
+                isSyncing = false;
+                updateSyncStatus('synced', 'Guardado ✓');
+                clearTimeout(syncTimeout);
+                syncTimeout = setTimeout(() => {
+                    updateSyncStatus('synced', 'Sincronizado ✓');
+                }, 3000);
+            })
+            .catch((error) => {
+                isSyncing = false;
+                updateSyncStatus('error', 'Error al guardar');
+                console.error('Error saving to Firebase:', error);
+            });
+    }
+
+    function loadFromFirebase() {
+        updateSyncStatus('syncing', 'Cargando datos...');
+        
+        database.ref('tasks').once('value')
+            .then((snapshot) => {
+                const data = snapshot.val();
+                if (data) {
+                    // Verificar que los datos tengan la estructura correcta
+                    const validData = {};
+                    const days = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
+                    days.forEach(day => {
+                        if (data[day] && Array.isArray(data[day])) {
+                            validData[day] = data[day].filter(task => task && typeof task === 'object');
+                        } else {
+                            validData[day] = JSON.parse(JSON.stringify(DEFAULT_TASKS[day] || []));
+                        }
+                    });
+                    currentTasks = validData;
+                    updateSyncStatus('synced', 'Datos cargados ✓');
+                } else {
+                    // No hay datos en Firebase, guardar los datos por defecto
+                    currentTasks = JSON.parse(JSON.stringify(DEFAULT_TASKS));
+                    saveToFirebase();
+                    updateSyncStatus('synced', 'Datos iniciales guardados ✓');
+                }
+                initialLoadDone = true;
+                renderView(currentView);
+            })
+            .catch((error) => {
+                updateSyncStatus('error', 'Error al cargar datos');
+                console.error('Error loading from Firebase:', error);
+                // Cargar datos por defecto
+                currentTasks = JSON.parse(JSON.stringify(DEFAULT_TASKS));
+                initialLoadDone = true;
+                renderView(currentView);
+            });
+    }
+
+    function forceSync() {
+        if (isSyncing) return;
+        saveToFirebase();
+    }
+
+    // Guardar automáticamente después de cada cambio
+    function autoSave() {
+        if (initialLoadDone) {
+            saveToFirebase();
+        }
+    }
+
     // --- Funciones auxiliares ---
     function getTasksForDay(day) {
         return currentTasks[day] || [];
@@ -70,6 +184,7 @@
 
     function setTasksForDay(day, tasks) {
         currentTasks[day] = tasks;
+        autoSave();
     }
 
     function getDayName(date) {
@@ -107,12 +222,6 @@
 
     function isDateInRange(date) {
         return date >= MIN_DATE && date <= MAX_DATE;
-    }
-
-    function clampDate(date) {
-        if (date < MIN_DATE) return new Date(MIN_DATE);
-        if (date > MAX_DATE) return new Date(MAX_DATE);
-        return date;
     }
 
     function dateToKey(date) {
@@ -294,14 +403,12 @@
             html += `<div class="picker-day-header">${d}</div>`;
         });
 
-        // Días del mes anterior
         const prevMonthDays = new Date(year, month, 0).getDate();
         for (let i = firstDay - 1; i >= 0; i--) {
             const day = prevMonthDays - i;
             html += `<div class="picker-day other-month disabled">${day}</div>`;
         }
 
-        // Días del mes actual
         for (let d = 1; d <= daysInMonth; d++) {
             const date = new Date(year, month, d);
             const isToday = date.toDateString() === today.toDateString();
@@ -312,7 +419,6 @@
             html += `<div class="${classes}" data-date="${dateToKey(date)}">${d}</div>`;
         }
 
-        // Completar con días del mes siguiente
         const totalCells = firstDay + daysInMonth;
         const remaining = (7 - (totalCells % 7)) % 7;
         for (let d = 1; d <= remaining; d++) {
@@ -321,7 +427,6 @@
 
         pickerGrid.innerHTML = html;
 
-        // Eventos click en días
         pickerGrid.querySelectorAll('.picker-day:not(.disabled)').forEach(el => {
             el.addEventListener('click', () => {
                 const [year, month, day] = el.dataset.date.split('-').map(Number);
@@ -490,10 +595,8 @@
 
         viewContainer.innerHTML = html;
 
-        // Eventos de click en celdas y encabezados
         viewContainer.querySelectorAll('.clickable-cell, .clickable-date').forEach(el => {
             el.addEventListener('click', (e) => {
-                // Evitar que el click en botones de tarea dispare la navegación
                 if (e.target.closest('.task-actions') || e.target.closest('.add-task-form')) return;
                 const dateKey = el.dataset.date;
                 if (dateKey) {
@@ -620,7 +723,6 @@
         html += `</div></div>`;
         viewContainer.innerHTML = html;
 
-        // Eventos click en días del mes
         viewContainer.querySelectorAll('.month-day:not(.no-day)').forEach(el => {
             el.addEventListener('click', () => {
                 const dateKey = el.dataset.date;
@@ -695,13 +797,14 @@
 
     // --- Reset ---
     function resetToDefault() {
-        if (confirm('Restaurar tareas fijas (se perderán cambios)')) {
+        if (confirm('⚠️ Esto eliminará TODOS los cambios guardados y restaurará las tareas por defecto. ¿Continuar?')) {
             currentTasks = JSON.parse(JSON.stringify(DEFAULT_TASKS));
+            autoSave();
             renderView(currentView);
         }
     }
 
-    // --- Inicialización ---
+    // --- INICIALIZACIÓN ---
     function init() {
         const today = new Date();
         if (!isDateInRange(today)) {
@@ -710,17 +813,19 @@
             currentDate = today;
         }
 
+        // Eventos de vistas
         viewBtns.forEach(btn => {
             btn.addEventListener('click', () => {
                 setView(btn.dataset.view);
             });
         });
 
+        // Navegación
         prevBtn.addEventListener('click', () => navigate(-1));
         nextBtn.addEventListener('click', () => navigate(1));
         todayBtn.addEventListener('click', goToToday);
 
-        // Date picker events
+        // Date picker
         datePickerToggle.addEventListener('click', toggleDatePicker);
         pickerPrevMonth.addEventListener('click', () => {
             pickerDate.setMonth(pickerDate.getMonth() - 1);
@@ -732,16 +837,18 @@
         });
         pickerTodayBtn.addEventListener('click', goToToday);
 
-        // Cerrar date picker al hacer clic fuera
         document.addEventListener('click', (e) => {
             if (!e.target.closest('.date-picker-wrapper')) {
                 closeDatePicker();
             }
         });
 
+        // Botones de acción
         document.getElementById('resetDefaultBtn').addEventListener('click', resetToDefault);
-        
-        setView('day');
+        forceSyncBtn.addEventListener('click', forceSync);
+
+        // Cargar datos desde Firebase
+        loadFromFirebase();
     }
 
     init();

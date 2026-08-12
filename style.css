@@ -29,7 +29,7 @@ body {
     flex-wrap: wrap;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 1.5rem;
+    margin-bottom: 1rem;
 }
 
 .header h1 {
@@ -76,6 +76,39 @@ body {
 
 .view-btn:hover {
     background: rgba(255,255,255,0.6);
+}
+
+/* Estado de sincronización */
+.sync-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 16px;
+    border-radius: 40px;
+    background: #f0f4fa;
+    font-size: 0.8rem;
+    color: #1f3a57;
+    margin-bottom: 1rem;
+    width: fit-content;
+}
+
+.sync-status.synced {
+    background: #e6f7e6;
+    color: #0d7a0d;
+}
+
+.sync-status.syncing {
+    background: #fff3e0;
+    color: #b86b00;
+}
+
+.sync-status.error {
+    background: #fde8e8;
+    color: #b91c1c;
+}
+
+.sync-status i {
+    font-size: 0.9rem;
 }
 
 /* Navegación */
@@ -336,7 +369,7 @@ body {
     pointer-events: auto;
 }
 
-/* NUEVO ESTILO DE TAREA - MÁS TIPO TARJETA */
+/* ESTILO DE TAREA - TIPO TARJETA */
 .task-item {
     background: #f8faff;
     padding: 10px 16px;
@@ -682,6 +715,22 @@ body {
     color: #8b5d0b;
 }
 
+/* Loader animado */
+.loader {
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    border: 2px solid #e9edf4;
+    border-top: 2px solid #2a7de1;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
 /* responsivo */
 @media (max-width: 650px) {
     .app { padding: 1.2rem; }
@@ -694,6 +743,7 @@ body {
     .color-palette { right: 10px; width: 150px; }
     .day-view-card { padding: 1rem; }
     .date-picker-dropdown { right: -40px; width: 260px; }
+    .sync-status { font-size: 0.7rem; padding: 4px 12px; }
 }
 
 .hidden { display: none; }

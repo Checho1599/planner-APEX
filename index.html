@@ -6,6 +6,9 @@
     <title>Planner APEX · TecnoMEL</title>
     <!-- Font Awesome Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <!-- Firebase SDKs (versión compat) -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -17,6 +20,11 @@
                 <button class="view-btn" data-view="week"><i class="fas fa-calendar-week"></i> Semana</button>
                 <button class="view-btn" data-view="month"><i class="fas fa-calendar-alt"></i> Mes</button>
             </div>
+        </div>
+
+        <!-- Estado de sincronización -->
+        <div class="sync-status" id="syncStatus">
+            <i class="fas fa-cloud"></i> <span id="syncText">Conectando...</span>
         </div>
 
         <!-- Navegación con buscador -->
@@ -52,6 +60,7 @@
 
         <div class="footer-actions">
             <button class="btn-outline" id="resetDefaultBtn"><i class="fas fa-undo-alt"></i> Restaurar tareas fijas</button>
+            <button class="btn-outline" id="forceSyncBtn"><i class="fas fa-sync"></i> Sincronizar ahora</button>
         </div>
     </div>
 
