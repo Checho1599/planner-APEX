@@ -1287,7 +1287,6 @@
             if (e.target === patternsModal) patternsModal.classList.remove('show');
         });
 
-        document.getElementById('resetDefaultBtn').addEventListener('click', resetToDefault);
         forceSyncBtn.addEventListener('click', forceSync);
         showPatternsBtn.addEventListener('click', showPatternsModal);
 
