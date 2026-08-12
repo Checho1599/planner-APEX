@@ -13,44 +13,39 @@
     };
 
     // --- VERIFICAR FIREBASE ---
-    console.log('📡 Verificando Firebase...');
-    console.log('📦 firebase disponible:', typeof firebase !== 'undefined');
-
     let database = null;
     let firebaseReady = false;
 
     try {
         if (typeof firebase !== 'undefined') {
             if (!firebase.apps.length) {
-                console.log('🔥 Inicializando Firebase...');
                 firebase.initializeApp(firebaseConfig);
                 console.log('✅ Firebase inicializado');
-            } else {
-                console.log('✅ Firebase ya estaba inicializado');
             }
             database = firebase.database();
             firebaseReady = true;
             console.log('✅ Database obtenida correctamente');
         } else {
-            console.error('❌ Firebase NO está cargado. Verifica que los scripts se cargaron.');
+            console.error('❌ Firebase NO está cargado');
             document.getElementById('syncText').textContent = '⚠️ Firebase no disponible';
             document.getElementById('syncStatus').className = 'sync-status error';
+            database = {
+                ref: () => ({
+                    set: () => Promise.resolve(),
+                    once: () => Promise.resolve({ val: () => null }),
+                    on: () => {}
+                })
+            };
         }
     } catch (error) {
         console.error('❌ Error al inicializar Firebase:', error);
         document.getElementById('syncText').textContent = '⚠️ Error: ' + error.message;
         document.getElementById('syncStatus').className = 'sync-status error';
-    }
-
-    // Si Firebase no está disponible, crear un objeto dummy para que no falle
-    if (!database) {
-        console.warn('⚠️ Usando database dummy (sin conexión)');
         database = {
             ref: () => ({
                 set: () => Promise.resolve(),
                 once: () => Promise.resolve({ val: () => null }),
-                on: () => {},
-                child: () => ({ set: () => Promise.resolve(), once: () => Promise.resolve({ val: () => null }) })
+                on: () => {}
             })
         };
     }
@@ -353,7 +348,6 @@
 
     // --- SINCRONIZACIÓN ---
     function updateSyncStatus(status, message) {
-        console.log('📊 Sync status:', status, message);
         syncStatus.className = 'sync-status';
         if (status === 'synced') {
             syncStatus.classList.add('synced');
@@ -371,7 +365,6 @@
 
     function saveToFirebase() {
         if (isSyncing || !firebaseReady || !database || !database.ref) {
-            console.log('⏭️ Guardado omitido (Firebase no listo)');
             return;
         }
         isSyncing = true;
@@ -381,8 +374,6 @@
             tasks: currentTasks,
             patterns: patterns
         };
-        
-        console.log('💾 Guardando en Firebase:', Object.keys(currentTasks).length, 'días con tareas');
         
         database.ref().set(dataToSave)
             .then(() => {
@@ -398,10 +389,7 @@
     }
 
     function loadFromFirebase() {
-        console.log('📥 Cargando desde Firebase...');
-        
         if (!firebaseReady || !database || !database.ref) {
-            console.warn('⚠️ Firebase no disponible, usando datos locales');
             initializeDefaultTasks();
             initialLoadDone = true;
             renderView(currentView);
@@ -413,23 +401,17 @@
         
         database.ref().once('value')
             .then((snapshot) => {
-                console.log('📥 Datos recibidos de Firebase');
                 const data = snapshot.val();
                 if (data) {
-                    console.log('📋 Datos encontrados:', Object.keys(data));
                     if (data.tasks && typeof data.tasks === 'object') {
                         currentTasks = data.tasks;
-                        console.log('📋 Tareas cargadas:', Object.keys(currentTasks).length, 'días');
                     } else {
-                        console.log('📋 No hay tareas guardadas');
                         currentTasks = {};
                     }
                     
                     if (data.patterns && Array.isArray(data.patterns)) {
                         patterns = data.patterns;
-                        console.log('📋 Patrones cargados:', patterns.length);
                     } else {
-                        console.log('📋 No hay patrones guardados');
                         patterns = DEFAULT_PATTERNS.map(p => ({ ...p, id: p.id || generatePatternId() }));
                         savePatterns();
                         if (Object.keys(currentTasks).length === 0) {
@@ -439,7 +421,6 @@
                     
                     updateSyncStatus('synced', 'Datos cargados ✓');
                 } else {
-                    console.log('📋 No hay datos en Firebase, inicializando...');
                     currentTasks = {};
                     patterns = DEFAULT_PATTERNS.map(p => ({ ...p, id: p.id || generatePatternId() }));
                     savePatterns();
@@ -447,11 +428,10 @@
                     updateSyncStatus('synced', 'Datos iniciales ✓');
                 }
                 initialLoadDone = true;
-                console.log('✅ Renderizando vista...');
                 renderView(currentView);
             })
             .catch((error) => {
-                console.error('❌ Error cargando datos:', error);
+                console.error('Error loading data:', error);
                 updateSyncStatus('error', 'Error al cargar');
                 initializeDefaultTasks();
                 initialLoadDone = true;
@@ -460,7 +440,6 @@
     }
 
     function initializeDefaultTasks() {
-        console.log('📋 Inicializando tareas por defecto');
         currentTasks = {};
         if (patterns.length === 0) {
             patterns = DEFAULT_PATTERNS.map(p => ({ ...p, id: p.id || generatePatternId() }));
@@ -470,7 +449,6 @@
     }
 
     function forceSync() {
-        console.log('🔄 Forzando sincronización...');
         if (isSyncing) return;
         saveToFirebase();
     }
@@ -481,19 +459,285 @@
         }
     }
 
-    // --- FUNCIONES DEL MODAL ---
+    // ============================================================
+    // === FUNCIONES DEL MODAL ===
+    // ============================================================
+
     function showTaskModal(options) {
-        console.log('📝 Abriendo modal:', options);
-        // ... (código del modal - mismo que antes)
-        // Por brevedad, mantén el código que ya tenías
-    }
+        const { mode, task, dateKey, index, patternId } = options;
+        modalContext = { mode, task, dateKey, index, patternId };
+        
+        const date = keyToDate(dateKey);
+        const dayName = getDayName(date);
+        const isEdit = mode === 'edit' || mode === 'delete';
+        
+        if (mode === 'delete') {
+            modalTitle.innerHTML = '<i class="fas fa-trash" style="color:#dc2626;"></i> Eliminar tarea';
+            modalBody.innerHTML = `
+                <p style="margin-bottom:1rem;">¿Cómo quieres eliminar esta tarea?</p>
+                <div class="modal-options">
+                    <div class="modal-option" data-action="delete-single">
+                        <div class="option-icon"><i class="fas fa-calendar-day"></i></div>
+                        <div class="option-text">
+                            <strong>Solo este día</strong>
+                            <small>Eliminar solo esta fecha</small>
+                        </div>
+                    </div>
+                    <div class="modal-option" data-action="delete-from-now">
+                        <div class="option-icon"><i class="fas fa-forward"></i></div>
+                        <div class="option-text">
+                            <strong>Desde hoy en adelante</strong>
+                            <small>Eliminar este día y todos los futuros</small>
+                        </div>
+                    </div>
+                    <div class="modal-option" data-action="delete-all">
+                        <div class="option-icon"><i class="fas fa-globe"></i></div>
+                        <div class="option-text">
+                            <strong>Todas las ocurrencias</strong>
+                            <small>Eliminar esta tarea en todas las fechas</small>
+                        </div>
+                    </div>
+                    ${task.patternId ? `
+                    <div class="modal-option" data-action="delete-pattern">
+                        <div class="option-icon"><i class="fas fa-list"></i></div>
+                        <div class="option-text">
+                            <strong>Eliminar el patrón completo</strong>
+                            <small>Eliminar todas las tareas de este patrón y el patrón</small>
+                        </div>
+                    </div>
+                    ` : ''}
+                </div>
+                <div class="modal-actions">
+                    <button class="btn-secondary" id="modalCancelBtn">Cancelar</button>
+                </div>
+            `;
+            
+            // Vincular eventos de eliminación
+            modalBody.querySelectorAll('.modal-option[data-action]').forEach(el => {
+                el.addEventListener('click', function() {
+                    const action = this.dataset.action;
+                    const task = modalContext.task;
+                    const dateKey = modalContext.dateKey;
+                    const index = modalContext.index;
+                    const patternId = modalContext.patternId;
 
-    function handleConfirmAction(isEdit, dateKey, index) {
-        // ... (mismo código que antes)
-    }
+                    if (action === 'delete-single') {
+                        removeTaskFromDate(dateKey, index);
+                    } else if (action === 'delete-from-now') {
+                        const taskText = task.text;
+                        const taskTime = task.time;
+                        const currentDateObj = keyToDate(dateKey);
+                        const allDates = Object.keys(currentTasks);
+                        allDates.forEach(key => {
+                            const date = keyToDate(key);
+                            if (date >= currentDateObj) {
+                                const tasks = getTasksForDate(key);
+                                const newTasks = tasks.filter(t => !(t.text === taskText && t.time === taskTime));
+                                setTasksForDate(key, newTasks);
+                            }
+                        });
+                    } else if (action === 'delete-all') {
+                        const taskText = task.text;
+                        const taskTime = task.time;
+                        const allDates = Object.keys(currentTasks);
+                        allDates.forEach(key => {
+                            const tasks = getTasksForDate(key);
+                            const newTasks = tasks.filter(t => !(t.text === taskText && t.time === taskTime));
+                            setTasksForDate(key, newTasks);
+                        });
+                    } else if (action === 'delete-pattern' && patternId) {
+                        const pattern = patterns.find(p => p.id === patternId);
+                        if (pattern && confirm(`¿Eliminar el patrón "${pattern.text}" y todas sus tareas?`)) {
+                            deletePattern(patternId);
+                        }
+                    }
+                    closeModal();
+                    renderView(currentView);
+                });
+            });
+            
+            document.getElementById('modalCancelBtn')?.addEventListener('click', closeModal);
+            
+        } else {
+            // Modo AGREGAR o EDITAR
+            const titleText = isEdit ? 'Editar tarea' : 'Agregar tarea';
+            const btnText = isEdit ? 'Actualizar' : 'Agregar';
+            modalTitle.innerHTML = `<i class="fas fa-${isEdit ? 'pen' : 'plus'}"></i> ${titleText}`;
+            
+            const daysCheckboxes = DAYS.map(d => `
+                <label style="display:inline-flex;align-items:center;gap:4px;margin:4px 8px 4px 0;font-size:0.85rem;cursor:pointer;">
+                    <input type="checkbox" class="pattern-day-check" value="${d}" ${d === dayName ? 'checked' : ''}>
+                    ${d}
+                </label>
+            `).join('');
 
-    function handleDeleteAction(e) {
-        // ... (mismo código que antes)
+            modalBody.innerHTML = `
+                <div class="modal-input-group">
+                    <label>Tarea</label>
+                    <input type="text" id="modalTaskText" value="${isEdit ? task.text : ''}" placeholder="Nombre de la tarea..." />
+                </div>
+                <div class="modal-input-group">
+                    <label>Horario</label>
+                    <input type="text" id="modalTaskTime" value="${isEdit ? (task.time || '') : '18:00-21:00'}" placeholder="Ej: 9:00-17:00" />
+                </div>
+                <div class="modal-input-group">
+                    <label>Color</label>
+                    <div class="color-selector" id="modalColorSelector">
+                        ${COLOR_PALETTE.map(c => `
+                            <div class="color-option ${(isEdit ? task.color : DEFAULT_COLOR) === c ? 'selected' : ''}" 
+                                 style="background-color:${c};" data-color="${c}"></div>
+                        `).join('')}
+                    </div>
+                </div>
+                <div style="border-top:1px solid #e9edf4;margin:1rem 0;padding-top:1rem;">
+                    <p style="font-weight:600;font-size:0.9rem;color:#0b2a3e;margin-bottom:8px;">
+                        <i class="fas fa-cog"></i> Opciones de aplicación
+                    </p>
+                    <div class="modal-options">
+                        <div class="modal-option selected" data-action="apply-single">
+                            <div class="option-icon"><i class="fas fa-calendar-day"></i></div>
+                            <div class="option-text">
+                                <strong>Solo este día</strong>
+                                <small>La tarea solo aparecerá en ${formatDate(date)}</small>
+                            </div>
+                            <span class="option-badge">Puntual</span>
+                        </div>
+                        <div class="modal-option" data-action="apply-week">
+                            <div class="option-icon"><i class="fas fa-calendar-week"></i></div>
+                            <div class="option-text">
+                                <strong>Toda la semana</strong>
+                                <small>Del ${formatDate(getWeekDays(date)[0])} al ${formatDate(getWeekDays(date)[6])}</small>
+                            </div>
+                            <span class="option-badge">Semanal</span>
+                        </div>
+                        <div class="modal-option" data-action="apply-pattern">
+                            <div class="option-icon"><i class="fas fa-redo"></i></div>
+                            <div class="option-text">
+                                <strong>Crear patrón recurrente</strong>
+                                <small>Se aplicará automáticamente en los días seleccionados</small>
+                            </div>
+                            <span class="option-badge">Recurrente</span>
+                        </div>
+                    </div>
+                    <div id="patternDaysContainer" style="margin-top:10px;display:none;background:#f8faff;padding:12px;border-radius:12px;">
+                        <p style="font-size:0.85rem;color:#5f7d9c;margin-bottom:6px;">Selecciona los días de la semana:</p>
+                        ${daysCheckboxes}
+                        <div style="margin-top:8px;">
+                            <label style="font-size:0.8rem;color:#5f7d9c;display:flex;align-items:center;gap:6px;cursor:pointer;">
+                                <input type="date" id="patternStartDate" value="${dateToKey(date)}" />
+                                <span>Inicio</span>
+                            </label>
+                            <label style="font-size:0.8rem;color:#5f7d9c;display:flex;align-items:center;gap:6px;cursor:pointer;margin-top:4px;">
+                                <input type="date" id="patternEndDate" placeholder="Opcional" />
+                                <span>Fin (opcional)</span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-actions">
+                    <button class="btn-primary" id="modalConfirmBtn">${btnText}</button>
+                    <button class="btn-secondary" id="modalCancelBtn">Cancelar</button>
+                </div>
+            `;
+
+            // --- VINCULAR EVENTOS DEL MODAL ---
+            
+            // 1. Selector de color
+            const colorOptions = modalBody.querySelectorAll('.color-selector .color-option');
+            colorOptions.forEach(el => {
+                el.addEventListener('click', function() {
+                    colorOptions.forEach(c => c.classList.remove('selected'));
+                    this.classList.add('selected');
+                });
+            });
+
+            // 2. Opciones de aplicación (mostrar/ocultar selector de días)
+            const applyOptions = modalBody.querySelectorAll('.modal-option[data-action]');
+            const patternContainer = document.getElementById('patternDaysContainer');
+            applyOptions.forEach(el => {
+                el.addEventListener('click', function() {
+                    applyOptions.forEach(o => o.classList.remove('selected'));
+                    this.classList.add('selected');
+                    if (this.dataset.action === 'apply-pattern') {
+                        patternContainer.style.display = 'block';
+                    } else {
+                        patternContainer.style.display = 'none';
+                    }
+                });
+            });
+
+            // 3. Botón de confirmación
+            document.getElementById('modalConfirmBtn').addEventListener('click', function() {
+                const text = document.getElementById('modalTaskText').value.trim();
+                const time = document.getElementById('modalTaskTime').value.trim();
+                const color = document.querySelector('#modalColorSelector .color-option.selected')?.dataset.color || DEFAULT_COLOR;
+                const selectedOption = document.querySelector('.modal-option.selected');
+                const action = selectedOption?.dataset.action || 'apply-single';
+
+                if (!text) {
+                    alert('Por favor, ingresa un nombre para la tarea.');
+                    return;
+                }
+
+                const date = keyToDate(dateKey);
+                const taskData = { text, time, color };
+
+                if (action === 'apply-single') {
+                    if (isEdit) {
+                        updateTaskInDate(dateKey, index, taskData);
+                    } else {
+                        addTaskToDate(dateKey, { ...taskData, fixed: false });
+                    }
+                    closeModal();
+                    renderView(currentView);
+                } else if (action === 'apply-week') {
+                    const weekDays = getWeekDays(date);
+                    weekDays.forEach(d => {
+                        const key = dateToKey(d);
+                        if (isEdit && d.getTime() === date.getTime()) {
+                            updateTaskInDate(key, index, taskData);
+                        } else {
+                            addTaskToDate(key, { ...taskData, fixed: false, patternId: null });
+                        }
+                    });
+                    closeModal();
+                    renderView(currentView);
+                } else if (action === 'apply-pattern') {
+                    const selectedDays = [];
+                    document.querySelectorAll('.pattern-day-check:checked').forEach(cb => {
+                        selectedDays.push(cb.value);
+                    });
+                    if (selectedDays.length === 0) {
+                        alert('Selecciona al menos un día de la semana.');
+                        return;
+                    }
+                    const startDate = document.getElementById('patternStartDate').value;
+                    const endDate = document.getElementById('patternEndDate').value || null;
+                    
+                    const pattern = {
+                        text: text,
+                        time: time,
+                        color: color,
+                        type: 'weekly',
+                        days: selectedDays,
+                        startDate: startDate,
+                        endDate: endDate,
+                        active: true
+                    };
+                    const result = addPattern(pattern);
+                    if (isEdit) {
+                        removeTaskFromDate(dateKey, index);
+                    }
+                    closeModal();
+                    alert(`✅ Patrón creado. Se agregaron ${result.added} tareas.`);
+                    renderView(currentView);
+                }
+            });
+
+            document.getElementById('modalCancelBtn')?.addEventListener('click', closeModal);
+        }
+
+        mainModal.classList.add('show');
     }
 
     function closeModal() {
@@ -503,7 +747,93 @@
     }
 
     function showPatternsModal() {
-        // ... (mismo código que antes)
+        let html = `
+            <div style="margin-bottom:1rem;">
+                <button class="btn-primary" id="addPatternBtn" style="padding:8px 16px;border:none;border-radius:40px;background:#2a7de1;color:white;cursor:pointer;">
+                    <i class="fas fa-plus"></i> Nuevo patrón
+                </button>
+            </div>
+            <div id="patternsList">
+        `;
+
+        if (patterns.length === 0) {
+            html += `
+                <div class="pattern-empty">
+                    <i class="fas fa-list"></i>
+                    No hay patrones configurados
+                </div>
+            `;
+        } else {
+            patterns.forEach(p => {
+                const daysStr = p.days ? p.days.join(', ') : 'Todos';
+                const dateRange = `${p.startDate || 'Inicio'} ${p.endDate ? '→ ' + p.endDate : '→ ∞'}`;
+                const badgeClass = p.type === 'weekly' ? 'weekly' : p.type === 'range' ? 'range' : 'days';
+                const badgeText = p.type === 'weekly' ? '♻️ Semanal' : p.type === 'range' ? '📅 Rango' : '📋 Días';
+                
+                html += `
+                    <div class="pattern-item">
+                        <div class="pattern-info">
+                            <strong>${p.text} <span class="pattern-badge ${badgeClass}">${badgeText}</span></strong>
+                            <small>${p.time || 'Sin horario'} · ${daysStr} · ${dateRange}</small>
+                        </div>
+                        <div class="pattern-actions">
+                            <button class="btn-edit-pattern" data-pattern-id="${p.id}">
+                                <i class="fas fa-pen"></i>
+                            </button>
+                            <button class="btn-delete-pattern" data-pattern-id="${p.id}">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </div>
+                    </div>
+                `;
+            });
+        }
+
+        html += `</div>`;
+        patternsModalBody.innerHTML = html;
+        patternsModal.classList.add('show');
+
+        patternsModalBody.querySelectorAll('.btn-delete-pattern').forEach(btn => {
+            btn.addEventListener('click', function() {
+                const id = this.dataset.patternId;
+                if (confirm('¿Eliminar este patrón y todas sus tareas?')) {
+                    deletePattern(id);
+                    showPatternsModal();
+                    renderView(currentView);
+                }
+            });
+        });
+
+        patternsModalBody.querySelectorAll('.btn-edit-pattern').forEach(btn => {
+            btn.addEventListener('click', function() {
+                const id = this.dataset.patternId;
+                const pattern = patterns.find(p => p.id === id);
+                if (pattern) {
+                    const newText = prompt('Nuevo nombre:', pattern.text);
+                    if (newText !== null && newText.trim() !== '') {
+                        const newTime = prompt('Nuevo horario:', pattern.time || '');
+                        const result = updatePattern(id, {
+                            text: newText.trim(),
+                            time: newTime ? newTime.trim() : ''
+                        });
+                        if (result) {
+                            showPatternsModal();
+                            renderView(currentView);
+                        }
+                    }
+                }
+            });
+        });
+
+        document.getElementById('addPatternBtn')?.addEventListener('click', function() {
+            patternsModal.classList.remove('show');
+            const todayKey = dateToKey(new Date());
+            showTaskModal({
+                mode: 'add',
+                dateKey: todayKey,
+                index: -1
+            });
+        });
     }
 
     // --- RENDERIZAR ---
@@ -870,7 +1200,6 @@
 
     // --- CONTROL DE VISTAS ---
     function renderView(view) {
-        console.log('🖥️ Renderizando vista:', view);
         if (view === 'day') {
             renderDayView();
         } else if (view === 'week') {
@@ -906,18 +1235,12 @@
 
     // --- INICIALIZACIÓN ---
     function init() {
-        console.log('🚀 Inicializando Planner APEX...');
-        
         const today = new Date();
         if (!isDateInRange(today)) {
             currentDate = new Date(MIN_DATE);
         } else {
             currentDate = today;
         }
-
-        console.log('📅 Fecha actual:', currentDate.toLocaleDateString());
-        console.log('📊 Firebase listo:', firebaseReady);
-        console.log('📊 Database:', database ? '✅ Disponible' : '❌ No disponible');
 
         // Actualizar estado inicial
         if (firebaseReady) {
@@ -933,12 +1256,10 @@
             });
         });
 
-        // Navegación
         prevBtn.addEventListener('click', function() { navigate(-1); });
         nextBtn.addEventListener('click', function() { navigate(1); });
         todayBtn.addEventListener('click', goToToday);
 
-        // Date picker
         datePickerToggle.addEventListener('click', toggleDatePicker);
         pickerPrevMonth.addEventListener('click', function() {
             pickerDate.setMonth(pickerDate.getMonth() - 1);
@@ -956,7 +1277,6 @@
             }
         });
 
-        // Modales
         modalClose.addEventListener('click', closeModal);
         patternsModalClose.addEventListener('click', function() { patternsModal.classList.remove('show'); });
         
@@ -967,13 +1287,10 @@
             if (e.target === patternsModal) patternsModal.classList.remove('show');
         });
 
-        // Botones
         document.getElementById('resetDefaultBtn').addEventListener('click', resetToDefault);
         forceSyncBtn.addEventListener('click', forceSync);
         showPatternsBtn.addEventListener('click', showPatternsModal);
 
-        // Cargar datos
-        console.log('📥 Iniciando carga de datos...');
         loadFromFirebase();
     }
 
