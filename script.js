@@ -295,7 +295,7 @@
         patterns.push(pattern);
         const added = applyPattern(pattern);
         savePatterns();
-        autoSave(); // Guardar también las tareas
+        autoSave();
         return { pattern, added };
     }
 
@@ -354,11 +354,10 @@
                 const data = snapshot.val();
                 if (data && Array.isArray(data)) {
                     patterns = data;
-                    console.log('📋 Patrones cargados desde Firebase:', patterns.length);
+                    console.log('📋 Patrones cargados:', patterns.length);
                 } else {
                     patterns = DEFAULT_PATTERNS.map(p => ({ ...p, id: p.id || generatePatternId() }));
                     savePatterns();
-                    // NO aplicar automáticamente para no sobrescribir tareas existentes
                     console.log('📋 Patrones por defecto creados');
                 }
                 return patterns;
@@ -420,16 +419,14 @@
             .then((snapshot) => {
                 const data = snapshot.val();
                 if (data) {
-                    // Cargar tareas
                     if (data.tasks && typeof data.tasks === 'object') {
                         currentTasks = data.tasks;
                         console.log('📋 Tareas cargadas:', Object.keys(currentTasks).length, 'días con tareas');
                     } else {
-                        console.log('📋 No hay tareas guardadas, inicializando...');
-                        initializeDefaultTasks();
+                        console.log('📋 No hay tareas guardadas');
+                        currentTasks = {};
                     }
                     
-                    // Cargar patrones (pero NO reaplicarlos automáticamente)
                     if (data.patterns && Array.isArray(data.patterns)) {
                         patterns = data.patterns;
                         console.log('📋 Patrones cargados:', patterns.length);
@@ -437,7 +434,6 @@
                         console.log('📋 No hay patrones guardados, creando por defecto...');
                         patterns = DEFAULT_PATTERNS.map(p => ({ ...p, id: p.id || generatePatternId() }));
                         savePatterns();
-                        // Solo aplicar patrones si no hay tareas
                         if (Object.keys(currentTasks).length === 0) {
                             patterns.forEach(p => applyPattern(p));
                         }
@@ -446,9 +442,10 @@
                     updateSyncStatus('synced', 'Datos cargados ✓');
                 } else {
                     console.log('📋 No hay datos en Firebase, inicializando...');
-                    initializeDefaultTasks();
+                    currentTasks = {};
                     patterns = DEFAULT_PATTERNS.map(p => ({ ...p, id: p.id || generatePatternId() }));
                     savePatterns();
+                    patterns.forEach(p => applyPattern(p));
                     updateSyncStatus('synced', 'Datos iniciales ✓');
                 }
                 initialLoadDone = true;
@@ -457,8 +454,9 @@
             .catch((error) => {
                 updateSyncStatus('error', 'Error al cargar');
                 console.error('Error:', error);
-                initializeDefaultTasks();
+                currentTasks = {};
                 patterns = DEFAULT_PATTERNS.map(p => ({ ...p, id: p.id || generatePatternId() }));
+                patterns.forEach(p => applyPattern(p));
                 initialLoadDone = true;
                 renderView(currentView);
             });
@@ -466,18 +464,25 @@
 
     function initializeDefaultTasks() {
         currentTasks = {};
-        // Solo crear tareas si no hay patrones
         if (patterns.length === 0) {
             patterns = DEFAULT_PATTERNS.map(p => ({ ...p, id: p.id || generatePatternId() }));
             patterns.forEach(p => applyPattern(p));
             savePatterns();
-        } else {
-            // Si ya hay patrones, aplicarlos
-            patterns.forEach(p => applyPattern(p));
         }
     }
 
-    // --- MODAL PARA AGREGAR/EDITAR TAREA ---
+    function forceSync() {
+        if (isSyncing) return;
+        saveToFirebase();
+    }
+
+    function autoSave() {
+        if (initialLoadDone) {
+            saveToFirebase();
+        }
+    }
+
+    // --- FUNCIONES DEL MODAL ---
     function showTaskModal(options) {
         const { mode, task, dateKey, index, patternId } = options;
         modalContext = { mode, task, dateKey, index, patternId };
@@ -526,7 +531,6 @@
                     <button class="btn-secondary" id="modalCancelBtn">Cancelar</button>
                 </div>
             `;
-            // Vincular eventos de eliminación
             modalBody.querySelectorAll('.modal-option[data-action]').forEach(el => {
                 el.addEventListener('click', handleDeleteAction);
             });
@@ -612,9 +616,6 @@
                 </div>
             `;
 
-            // --- VINCULAR EVENTOS DEL MODAL ---
-            
-            // 1. Selector de color
             const colorOptions = modalBody.querySelectorAll('.color-selector .color-option');
             colorOptions.forEach(el => {
                 el.addEventListener('click', function() {
@@ -623,7 +624,6 @@
                 });
             });
 
-            // 2. Opciones de aplicación (mostrar/ocultar selector de días)
             const applyOptions = modalBody.querySelectorAll('.modal-option[data-action]');
             const patternContainer = document.getElementById('patternDaysContainer');
             applyOptions.forEach(el => {
@@ -638,19 +638,16 @@
                 });
             });
 
-            // 3. Botón de confirmación
             document.getElementById('modalConfirmBtn').addEventListener('click', function() {
                 handleConfirmAction(isEdit, dateKey, index);
             });
 
-            // 4. Botón de cancelar
             document.getElementById('modalCancelBtn')?.addEventListener('click', closeModal);
         }
 
         mainModal.classList.add('show');
     }
 
-    // --- MANEJADOR DE CONFIRMACIÓN ---
     function handleConfirmAction(isEdit, dateKey, index) {
         const text = document.getElementById('modalTaskText').value.trim();
         const time = document.getElementById('modalTaskTime').value.trim();
@@ -718,7 +715,6 @@
         }
     }
 
-    // --- MANEJADOR DE ELIMINACIÓN ---
     function handleDeleteAction(e) {
         const action = this.dataset.action;
         const task = modalContext.task;
@@ -760,7 +756,12 @@
         renderView(currentView);
     }
 
-    // --- MODAL DE PATRONES ---
+    function closeModal() {
+        mainModal.classList.remove('show');
+        patternsModal.classList.remove('show');
+        modalContext = null;
+    }
+
     function showPatternsModal() {
         let html = `
             <div style="margin-bottom:1rem;">
@@ -808,7 +809,6 @@
         patternsModalBody.innerHTML = html;
         patternsModal.classList.add('show');
 
-        // Eventos
         patternsModalBody.querySelectorAll('.btn-delete-pattern').forEach(btn => {
             btn.addEventListener('click', function() {
                 const id = this.dataset.patternId;
@@ -852,70 +852,7 @@
         });
     }
 
-    function closeModal() {
-        mainModal.classList.remove('show');
-        patternsModal.classList.remove('show');
-        modalContext = null;
-    }
-
     // --- RENDERIZAR ---
-    function renderDayView() {
-        const dateKey = dateToKey(currentDate);
-        const dayName = getDayName(currentDate);
-        const dateStr = formatDate(currentDate);
-        
-        navTitle.textContent = `${dayName} · ${dateStr}`;
-
-        let html = `<div class="day-view-card">
-            <div class="day-title"><i class="fas fa-calendar-day"></i> ${dayName} · ${dateStr}</div>
-            <div class="task-list" data-date="${dateKey}">`;
-        
-        const tasks = getTasksForDate(dateKey);
-        if (tasks.length === 0) {
-            html += `<div class="empty-tasks">Sin tareas programadas</div>`;
-        } else {
-            tasks.forEach((task, idx) => {
-                const el = createTaskElementHTML(task, dateKey, idx);
-                html += el;
-            });
-        }
-        html += `</div>
-            <div class="add-task-form" data-date="${dateKey}">
-                <button class="add-task-btn" style="width:100%;justify-content:center;padding:12px;background:#f0f6ff;color:#2a7de1;border:2px dashed #c6d7eb;border-radius:16px;cursor:pointer;">
-                    <i class="fas fa-plus"></i> Agregar tarea
-                </button>
-            </div>
-        </div>`;
-
-        viewContainer.innerHTML = html;
-
-        viewContainer.querySelector('.add-task-btn')?.addEventListener('click', function() {
-            const dateKey = this.closest('.add-task-form').dataset.date;
-            showTaskModal({ mode: 'add', dateKey: dateKey, index: -1 });
-        });
-
-        viewContainer.querySelectorAll('.task-item').forEach(item => {
-            const dateKey = item.dataset.date;
-            const idx = parseInt(item.dataset.idx);
-            const tasksData = getTasksForDate(dateKey);
-            if (tasksData && tasksData[idx]) {
-                const task = tasksData[idx];
-                item.querySelector('.edit-task')?.addEventListener('click', function(e) {
-                    e.stopPropagation();
-                    showTaskModal({ mode: 'edit', task, dateKey, index: idx });
-                });
-                item.querySelector('.remove-task')?.addEventListener('click', function(e) {
-                    e.stopPropagation();
-                    showTaskModal({ mode: 'delete', task, dateKey, index: idx, patternId: task.patternId });
-                });
-                item.querySelector('.color-picker-btn')?.addEventListener('click', function(e) {
-                    e.stopPropagation();
-                    toggleColorPalette(item, task, dateKey, idx);
-                });
-            }
-        });
-    }
-
     function createTaskElementHTML(task, dateKey, idx) {
         const color = task.color || DEFAULT_COLOR;
         const fixedClass = task.fixed ? 'fixed-task' : '';
@@ -969,6 +906,62 @@
                 }
             });
         }, 10);
+    }
+
+    function renderDayView() {
+        const dateKey = dateToKey(currentDate);
+        const dayName = getDayName(currentDate);
+        const dateStr = formatDate(currentDate);
+        
+        navTitle.textContent = `${dayName} · ${dateStr}`;
+
+        let html = `<div class="day-view-card">
+            <div class="day-title"><i class="fas fa-calendar-day"></i> ${dayName} · ${dateStr}</div>
+            <div class="task-list" data-date="${dateKey}">`;
+        
+        const tasks = getTasksForDate(dateKey);
+        if (tasks.length === 0) {
+            html += `<div class="empty-tasks">Sin tareas programadas</div>`;
+        } else {
+            tasks.forEach((task, idx) => {
+                html += createTaskElementHTML(task, dateKey, idx);
+            });
+        }
+        html += `</div>
+            <div class="add-task-form" data-date="${dateKey}">
+                <button class="add-task-btn" style="width:100%;justify-content:center;padding:12px;background:#f0f6ff;color:#2a7de1;border:2px dashed #c6d7eb;border-radius:16px;cursor:pointer;">
+                    <i class="fas fa-plus"></i> Agregar tarea
+                </button>
+            </div>
+        </div>`;
+
+        viewContainer.innerHTML = html;
+
+        viewContainer.querySelector('.add-task-btn')?.addEventListener('click', function() {
+            const dateKey = this.closest('.add-task-form').dataset.date;
+            showTaskModal({ mode: 'add', dateKey: dateKey, index: -1 });
+        });
+
+        viewContainer.querySelectorAll('.task-item').forEach(item => {
+            const dateKey = item.dataset.date;
+            const idx = parseInt(item.dataset.idx);
+            const tasksData = getTasksForDate(dateKey);
+            if (tasksData && tasksData[idx]) {
+                const task = tasksData[idx];
+                item.querySelector('.edit-task')?.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    showTaskModal({ mode: 'edit', task, dateKey, index: idx });
+                });
+                item.querySelector('.remove-task')?.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    showTaskModal({ mode: 'delete', task, dateKey, index: idx, patternId: task.patternId });
+                });
+                item.querySelector('.color-picker-btn')?.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    toggleColorPalette(item, task, dateKey, idx);
+                });
+            }
+        });
     }
 
     function renderWeekView() {
